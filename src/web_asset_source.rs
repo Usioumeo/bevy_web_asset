@@ -31,16 +31,16 @@ impl WebAssetReader {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
+async fn get<'a>(path: PathBuf) -> Result< impl Reader +'a, AssetReaderError> {
     use bevy::asset::io::VecReader;
     use js_sys::Uint8Array;
     use wasm_bindgen::JsCast;
     use wasm_bindgen_futures::JsFuture;
     use web_sys::Response;
 
-    fn js_value_to_err<'a>(
-        context: &'a str,
-    ) -> impl FnOnce(wasm_bindgen::JsValue) -> std::io::Error + 'a {
+    fn js_value_to_err(
+        context: & str,
+    ) -> impl FnOnce(wasm_bindgen::JsValue) -> std::io::Error + '_ {
         move |value| {
             let message = match js_sys::JSON::stringify(&value) {
                 Ok(js_str) => format!("Failed to {context}: {js_str}"),
@@ -66,7 +66,7 @@ async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
         200 => {
             let data = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
             let bytes = Uint8Array::new(&data).to_vec();
-            let reader: Box<Reader> = Box::new(VecReader::new(bytes));
+            let reader = VecReader::new(bytes);
             Ok(reader)
         }
         404 => Err(AssetReaderError::NotFound(path)),
@@ -81,7 +81,7 @@ async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
+async fn get<'a>(path: PathBuf) -> Result<impl Reader + 'a, AssetReaderError> {
     use std::future::Future;
     use std::io;
     use std::pin::Pin;
@@ -92,7 +92,6 @@ async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
 
     #[pin_project::pin_project]
     struct ContinuousPoll<T>(#[pin] T);
-
     impl<T: Future> Future for ContinuousPoll<T> {
         type Output = T::Output;
 
@@ -103,7 +102,7 @@ async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
             self.project().0.poll(cx)
         }
     }
-
+    
     let str_path = path.to_str().ok_or_else(|| {
         AssetReaderError::Io(
             io::Error::new(
@@ -113,7 +112,6 @@ async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
             .into(),
         )
     })?;
-
     let client = surf::Client::new().with(surf::middleware::Redirect::default());
     let mut response = ContinuousPoll(client.get(str_path)).await.map_err(|err| {
         AssetReaderError::Io(
@@ -129,13 +127,12 @@ async fn get<'a>(path: PathBuf) -> Result<Box<Reader<'a>>, AssetReaderError> {
             .into(),
         )
     })?;
-
     match response.status() {
-        StatusCode::Ok => Ok(Box::new(VecReader::new(
+        StatusCode::Ok => Ok(VecReader::new(
             ContinuousPoll(response.body_bytes())
                 .await
                 .map_err(|_| AssetReaderError::NotFound(path.to_path_buf()))?,
-        )) as _),
+        )),
         StatusCode::NotFound => Err(AssetReaderError::NotFound(path)),
         code => Err(AssetReaderError::Io(
             io::Error::new(
@@ -155,11 +152,11 @@ impl AssetReader for WebAssetReader {
     fn read<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, AssetReaderError>> {
+    ) -> impl ConditionalSendFuture<Output = Result<impl Reader + 'a, AssetReaderError>> {
         get(self.make_uri(path))
     }
 
-    async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<Box<Reader<'a>>, AssetReaderError> {
+    async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
         match self.make_meta_uri(path) {
             Some(uri) => get(uri).await,
             None => Err(AssetReaderError::NotFound(
