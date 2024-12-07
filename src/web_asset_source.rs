@@ -167,7 +167,7 @@ async fn get<'a>(
     }
 
     let window = web_sys::window().unwrap();
-    let mut init = RequestInit::new();
+    let init = RequestInit::new();
     init.set_mode(RequestMode::Cors);
     let request = Request::new_with_str_and_init(path.to_str().unwrap(), &init).unwrap();
     let request_headers = request.headers();
@@ -194,7 +194,7 @@ async fn get<'a>(
         200 => {
             let data = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
             let bytes = Uint8Array::new(&data).to_vec();
-            let reader: Box<Reader> = Box::new(VecReader::new(bytes));
+            let reader = VecReader::new(bytes);
             Ok(reader)
         }
         404 => Err(AssetReaderError::NotFound(path)),
