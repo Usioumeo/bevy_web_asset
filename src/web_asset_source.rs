@@ -142,7 +142,7 @@ impl WebAssetReader {
 async fn get<'a>(
     path: PathBuf,
     shared: Arc<RwLock<WebAssetReaderDataInner>>,
-) -> Result<Box<Reader<'a>>, AssetReaderError> {
+) -> Result<impl Reader + 'a, AssetReaderError> {
     use bevy::asset::io::VecReader;
     use js_sys::Uint8Array;
     use wasm_bindgen::JsCast;
@@ -212,7 +212,7 @@ async fn get<'a>(
 async fn get<'a>(
     path: PathBuf,
     shared: Arc<RwLock<WebAssetReaderDataInner>>,
-) -> Result<Box<Reader<'a>>, AssetReaderError> {
+) -> Result<impl Reader + 'a, AssetReaderError> {
     use std::io;
 
     use bevy::asset::io::VecReader;
@@ -274,18 +274,18 @@ async fn get<'a>(
     });
 
     let result = blocking_task.await?;
-    Ok(Box::new(VecReader::new(result)))
+    Ok(VecReader::new(result))
 }
 
 impl AssetReader for WebAssetReader {
     fn read<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<Reader<'a>>, AssetReaderError>> {
+    ) -> impl ConditionalSendFuture<Output = Result<impl Reader + 'a, AssetReaderError>> {
         get(self.make_uri_query(path), self.shared.clone())
     }
 
-    async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<Box<Reader<'a>>, AssetReaderError> {
+    async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
         match self.make_meta_uri(path) {
             Some(uri) => get(uri, self.shared.clone()).await,
             None => Err(AssetReaderError::NotFound(
